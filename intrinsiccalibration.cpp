@@ -6,38 +6,11 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
-bool IntrinsicCalibration::Calibrate(const std::string &img_dir_path,
+bool IntrinsicCalibration::Calibrate(const std::vector<std::string> &file_names,
                                      const int &grid_size, // in milimeter 50mm
                                      const int &corner_width,
                                      const int &corner_height)
 {
-    // read image files
-    std::vector<std::string> file_names;
-    if (img_dir_path.rfind('/') != img_dir_path.size() - 1){
-        img_dir_path_ = img_dir_path + "/";
-    }
-    else{
-        img_dir_path_ = img_dir_path;
-    }
-
-    DIR *dir;
-    struct dirent *ptr;
-    if ((dir = opendir(img_dir_path_.c_str())) == NULL) {
-        std::cerr << "[ERROR]Open Image Folder Failed." << std::endl;
-        exit(1);
-    }
-    while ((ptr = readdir(dir)) != NULL) {
-        if (strcmp(ptr->d_name, ".") != 0 && strcmp(ptr->d_name, "..") != 0 &&
-            opendir((img_dir_path_ + ptr->d_name).c_str()) == nullptr)
-            file_names.push_back(ptr->d_name);
-    }
-    if (file_names.size() == 0) {
-        std::cerr << "[ERROR]No Calibration Image Files.";
-        return false;
-    }
-    closedir(dir);
-
-
     grid_size_ = grid_size;
     corner_size_ = cv::Size(corner_width, corner_height);
     std::vector<cv::Point3f> object_corners;
@@ -49,7 +22,7 @@ bool IntrinsicCalibration::Calibrate(const std::string &img_dir_path,
     }
 
     // pick image
-    cv::Mat init_img = cv::imread(img_dir_path_+file_names[0], 0);
+    cv::Mat init_img = cv::imread(file_names[0], 0);
     img_size_ = init_img.size();
     std::cout << file_names[0] << " " << img_size_.width << " " << img_size_.height << " "
     << corner_width << " " << corner_height << std::endl;
@@ -59,7 +32,7 @@ bool IntrinsicCalibration::Calibrate(const std::string &img_dir_path,
 //    int total_image_num = file_names.size();
     int detected_image_num = 0;
     for (unsigned int i = 0; i < file_names.size(); i++){
-        cv::Mat input_image = cv::imread(img_dir_path_+file_names[i], 0);
+        cv::Mat input_image = cv::imread(file_names[i], 0);
         // img_size_ = input_image.size();
         // detect corner
         std::vector<cv::Point2f> image_corners;
@@ -130,5 +103,48 @@ bool IntrinsicCalibration::Calibrate(const std::string &img_dir_path,
     }
     std::cout << "\nrvecs 位移向量：" << t_mats_[0].rows << " " << t_mats_[0].cols << std::endl;
 
+    this->updateUndistortMap();     // 更新 map 映射
+
     return true;
+}
+
+
+bool IntrinsicCalibration::undistortSingleImage(const std::string &image_path,
+    const std::string &output_image_path)
+{
+    cv::Mat input_image = cv::imread(image_path);
+    if (img_size_ != input_image.size()) {
+        std::cerr << "[ERROR]Input Image Size Mismatch Calibration Image Size\n";
+        return false;
+    }
+    cv::Mat map1, map2;
+    cv::initUndistortRectifyMap(camera_intrinsic_, camera_dist_, cv::Mat(),
+                                camera_intrinsic_, img_size_, CV_32FC1, map1, map2);
+    cv::Mat undistorted_image;
+    cv::remap(input_image, undistorted_image, map1, map2, cv::INTER_LINEAR);
+
+    cv::imwrite(output_image_path, undistorted_image);
+    return true;
+}
+
+bool IntrinsicCalibration::undistortImages (const std::vector<std::string> &image_names)
+{
+    if (opendir(undistort_image_path_.c_str()) == nullptr){
+        char command[1024];
+        sprintf(command, "mkdir -p %s", undistort_image_path_.c_str());
+        system(command);
+        printf("Create dir: %s\n", undistort_image_path_.c_str());
+    }
+
+    cv::Mat map1, map2;
+    cv::initUndistortRectifyMap(camera_intrinsic_, camera_dist_, cv::Mat(),
+                                camera_intrinsic_, img_size_, CV_32FC1, map1, map2);
+    for (int i = 0; i < image_names.size(); i++){
+        cv::Mat input_image = cv::imread(image_names[i]);
+        std::string output_file_path = undistort_image_path_ + image_names[i];
+        cv::Mat undistorted_image;
+        cv::remap(input_image, undistorted_image, map1, map2, cv::INTER_LINEAR);
+
+        cv::imwrite(output_file_path, undistorted_image);
+    }
 }

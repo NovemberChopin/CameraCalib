@@ -3,6 +3,7 @@
 #include "common.h"
 #include <iostream>
 #include <iomanip>
+#include <vector>
 #include <opencv2/opencv.hpp>
 
 #define MIN_CALI_IMAGE_NUM 15
@@ -13,7 +14,7 @@ class IntrinsicCalibration
 public:
     IntrinsicCalibration() {}
 
-    bool Calibrate(const std::string &img_dir_path,
+    bool Calibrate(const std::vector<std::string> &file_names,
                    const int &grid_size = 50, // in milimeter 50mm
                    const int &corner_width = 15, const int &corner_height = 17);
 
@@ -47,8 +48,17 @@ public:
         return camera_intrinsic_.at<double>(1, 1);
     }
 
-    cv::Mat camera_intrinsic_;
-    cv::Mat camera_dist_;
+    void applyFixImage(cv::Mat &img, cv::Mat &undistorted_image) {
+        cv::remap(img, undistorted_image, map1, map2, cv::INTER_LINEAR);
+    }
+
+    void updateUndistortMap() {
+        cv::initUndistortRectifyMap(camera_intrinsic_, camera_dist_, cv::Mat(),
+                                    camera_intrinsic_, img_size_, CV_32FC1, this->map1, this->map2);
+    }
+
+    cv::Mat camera_intrinsic_ = cv::Mat::zeros(3, 3, CV_32FC1);
+    cv::Mat camera_dist_ = cv::Mat::zeros(1, 5, CV_32FC1);
 
 private:
     // input image path
